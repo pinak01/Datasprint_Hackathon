@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Land Drawing with Sentinel Data</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    #map {
+      width: 35%;
+      height: 100%;
+    }
+    #content {
+      width: 65%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #f9f9f9;
+      padding: 20px;
+    }
+    #satelliteImg {
+      max-width: 100%;
+      max-height: 80%;
+      border: 2px solid #333;
+      border-radius: 8px;
+      display: none;
+    }
+    #submitBtn {
+      margin-top: 20px;
+      padding: 10px 15px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #submitBtn:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="content">
+    <h2>Sentinel Image</h2>
+    <img id="satelliteImg" alt="Sentinel result"/>
+    <button id="submitBtn">Submit Land</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <script>
+    const map = L.map('map').setView([20.5937, 78.9629], 5); // India center
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: true,
+        polyline: false,
+        rectangle: true,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems
+      }
+    });
+    map.addControl(drawControl);
+
+    let currentLayer;
+
+    map.on(L.Draw.Event.CREATED, function (event) {
+      if (currentLayer) {
+        drawnItems.removeLayer(currentLayer);
+      }
+      currentLayer = event.layer;
+      drawnItems.addLayer(currentLayer);
+    });
+
+    document.getElementById("submitBtn").addEventListener("click", async () => {
+      const geojson = currentLayer.toGeoJSON();
+      const coords = geojson.geometry.coordinates[0];
+  if (!coords) {
+    alert("Please draw your land first!");
+    return;
+  }
+  
+  try {
+    const response = await fetch("http://127.0.0.1:5000/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coordinates: coords })
+    });
+
+    const contentType = response.headers.get("content-type");
+
+    if (response.ok && contentType && contentType.includes("image/png")) {
+      const blob = await response.blob();
+
+      // Convert blob → base64
+      const reader = new FileReader();
+      reader.onloadend = function () {
+        const img = document.getElementById("result");
+        img.src = reader.result; // base64 data URI
+        img.style.display = "block";
+      };
+      reader.readAsDataURL(blob);
+
+    } else {
+      const errorData = await response.json();
+      alert(errorData.message || errorData.error || "No data available for this area.");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Failed to fetch image from backend.");
+  }
+});
+
+
+  </script>
+</body>
+</html>
